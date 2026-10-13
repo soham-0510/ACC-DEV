@@ -1,0 +1,46 @@
+# Phase 2 (when Docker is installed): Postgres + MinIO + backend, same code as laptop mode.
+# Run from repo root:  docker compose -f deploy/compose/docker-compose.yml up --build
+name: resilient-storage
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: storage
+      POSTGRES_USER: storage
+      POSTGRES_PASSWORD: storage-dev-pass
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storage"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes: [miniodata:/data]
+    ports: ["9001:9001"]   # MinIO console in the browser
+
+  api:
+    build: ../../services
+    environment:
+      SERVICE: all
+      DATABASE_URL: postgresql+psycopg://storage:storage-dev-pass@postgres:5432/storage
+      STORAGE_BACKEND: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: blobs
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin123
+    volumes: [snapshots:/data/snapshots]
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      minio: {condition: service_started}
+
+volumes:
+  pgdata:
+  miniodata:
+  snapshots:
